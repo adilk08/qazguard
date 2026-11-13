@@ -184,6 +184,6 @@ def index():return send_from_directory(WEB,'business.html')
 def lab():return send_from_directory(WEB,'index.html')
 @app.get('/<name>')
 def asset(name):
-    if name not in {'business.js','business.css','output.js','app.js','style.css'}:
+    if name not in {'business.js','business.css','output.js','gateway.js','app.js','style.css'}:
         return jsonify(message='Не найдено.'),404
     return send_from_directory(WEB,name)

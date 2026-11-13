@@ -119,14 +119,36 @@ def report(user,mode='summary',order_id=0):
             'columns':['Заказ','Клиент / компания','Маршрут','Сумма, ₸','Оплачено, ₸','Долг, ₸','Статус','Срок'],
             'rows':rows,'statuses':statuses,'histogram':hist,'count':len(orders),'total':sum(amounts),'paid':sum(o['paid'] for o in orders),'debt':sum(o['amount']-o['paid'] for o in orders),'restricted':user['role']=='analyst','source':'PostgreSQL','generated':date.today().isoformat()}
 
+def gateway_trace(tok,original,payload,raw,answer,prediction,provider,action):
+    import re
+    mappings=[]
+    for token,value in tok.vault.items():
+        kind=re.match(r'<TOKEN_(.+)_[A-F0-9]+>',token).group(1)
+        used=(raw or '').count(token)
+        mappings.append({'type':kind,'original':value,'token':token,'length':len(value),
+                         'remaining_in_payload':(payload or '').count(value),
+                         'restored_count':used})
+    external=provider!='offline' and provider!='none'
+    return {'request_id':secrets.token_hex(8),'classification':prediction,
+            'decision':action,'provider':provider,'provider_called':external,
+            'served_from_cache':False,'original':original,'prepared_payload':payload,
+            'sent_payload':payload if external else None,'raw_response':raw,
+            'restored_response':answer,'mappings':mappings,
+            'restored_count':sum(m['restored_count'] for m in mappings)}
+
 def assistant(gateway,user,data):
+    demo=data.get('demo_trace') is True
+    if demo and user['role']!='admin':raise PermissionError('Разбор шлюза доступен только администратору.')
     prompt=str(data.get('prompt','')).strip();mode=data.get('mode','summary')
     if not 1<=len(prompt)<=3000 or mode not in ('summary','debt','late','letter','check'):raise ValueError('Проверьте запрос.')
     if user['role']=='analyst' and mode=='letter':raise PermissionError('Аналитик не имеет доступа к клиентским письмам.')
     tok=core.QazDataTokenizer()
     prediction=gateway.ml_model.predict(gateway.vectorizer.transform([prompt]))[0]
     if prediction=='JAILBREAK':
-        event(user,'BLOCK_AND_ALERT');return {'action':'BLOCK_AND_ALERT','provider':'none','answer':'Запрос заблокирован классификатором.','payload':None,'raw':None,'entities':0}
+        answer='Запрос заблокирован классификатором.'
+        result={'action':'BLOCK_AND_ALERT','provider':'none','answer':answer,'payload':None,'raw':None,'entities':0}
+        if demo:result['trace']=gateway_trace(tok,prompt,None,None,answer,prediction,'none','BLOCK_AND_ALERT')
+        event(user,'BLOCK_AND_ALERT');return result
     snap=snapshot(user);context={'our_company':'QazLogistics','summary':snap['stats'],'statuses':snap['statuses']}
     if mode!='check' and user['role']!='analyst':
         _,orders,_=records()
@@ -139,7 +161,7 @@ def assistant(gateway,user,data):
         protected=[]
         for o in orders[:30]:
             item=dict(o)
-            for f in ('name','company'):item[f]=tok._get_token('CLIENT',item[f])
+            for f in ('name','company'):item[f]=tok._get_token('CLIENT_NAME' if f=='name' else 'CLIENT_COMPANY',item[f])
             item['customer_name']=item.pop('name')
             item['customer_company']=item.pop('company')
             protected.append(item)
@@ -147,10 +169,14 @@ def assistant(gateway,user,data):
     elif mode=='letter':raise PermissionError('Аналитик не имеет доступа к клиентским письмам.')
     text=prompt if mode=='check' else prompt+'\nUse ONLY this database snapshot; do not invent records. Amounts are KZT. Our company is QazLogistics; customer_name and customer_company identify the recipient, not the sender.\n'+json.dumps(context,ensure_ascii=False)
     payload,entities=tok.inspect_and_tokenize(text)
-    provider=SETTINGS['provider']; cachekey=(user['id'],provider,hashlib.sha256(text.encode()).hexdigest())
+    original=tok.detokenize(text) if demo else None
+    provider=SETTINGS['provider']; cachekey=(user['id'],provider,demo,hashlib.sha256(text.encode()).hexdigest())
     with LOCK:
         cached=CACHE.get(cachekey)
-        if cached and cached[0]>time.time():return dict(cached[1],cached=True)
+        if cached and cached[0]>time.time():
+            result=dict(cached[1],cached=True)
+            if demo and result.get('trace'):result['trace']=dict(result['trace'],served_from_cache=True,provider_called=False)
+            return result
         recent=[t for t in CALLS.get(user['id'],[]) if t>time.time()-60]
         if len(recent)>=5:raise ValueError('Лимит кабинета: 5 запросов в минуту. Подождите.')
         CALLS[user['id']]=recent+[time.time()]
@@ -169,7 +195,8 @@ def assistant(gateway,user,data):
         else:raw=f"SQL-сводка без ИИ. Заказов: {snap['stats']['orders']}; сумма: {snap['stats']['total']:,} ₸; оплачено: {snap['stats']['paid']:,} ₸; долг: {snap['stats']['debt']:,} ₸; задержано: {snap['stats']['late']}."
         import re
         if set(re.findall(r'<TOKEN_[^<>\s]+>',raw))-set(tok.vault):raise gemini_provider.ProviderError('Модель изменила токены. Повторите запрос.')
-        result={'action':'TOKENIZE_AND_FORWARD' if tok.vault else 'ALLOW_DIRECT','provider':provider,'answer':tok.detokenize(raw),'raw':raw,'payload':payload,'entities':len(tok.vault),'cached':False,'report':report(user,mode,data.get('order_id',0))}
+        result={'action':'TOKENIZE_AND_FORWARD' if tok.vault else 'ALLOW_DIRECT','provider':provider,'answer':tok.detokenize(raw),'raw':raw if demo else None,'payload':payload if demo else None,'entities':len(tok.vault),'cached':False,'report':report(user,mode,data.get('order_id',0))}
+        if demo:result['trace']=gateway_trace(tok,original,payload,raw,result['answer'],prediction,provider,result['action'])
         with LOCK:
             if len(CACHE)>100:CACHE.clear()
             CACHE[cachekey]=(time.time()+60,result)

@@ -1,0 +1,10 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const context={state:{user:{role:'admin'}},result:{trace:{request_id:'example',classification:'SENSITIVE_DATA',decision:'TOKENIZE_AND_FORWARD',provider:'gemini',provider_called:true,served_from_cache:false,original:'<script>alert(1)</script>',prepared_payload:'<TOKEN_EMAIL_12345678>',sent_payload:'<TOKEN_EMAIL_12345678>',raw_response:'<TOKEN_EMAIL_12345678>',restored_response:'<img src=x onerror=alert(1)>',restored_count:1,mappings:[{type:'EMAIL',original:'<img src=x onerror=alert(1)>',token:'<TOKEN_EMAIL_12345678>',length:12,remaining_in_payload:0,restored_count:1}]}},esc:s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),table:(head,rows)=>rows.map(r=>r.join(' ')).join('\n')};
+vm.createContext(context);vm.runInContext(fs.readFileSync(fs.existsSync(__dirname+'/web/gateway.js')?__dirname+'/web/gateway.js':__dirname+'/gateway.js','utf8'),context);
+assert.equal(context.gatewayPanel(),'');
+vm.runInContext('gatewayDemo=true',context);
+const html=context.gatewayPanel();
+assert(!html.includes('<script>')&&!html.includes('<img'));
+assert(html.includes('<mark>&lt;TOKEN_EMAIL_12345678&gt;</mark>'));
+context.state.user.role='manager';assert.equal(context.gatewayPanel(),'');
+console.log('4 gateway UI privacy and escaping checks passed');

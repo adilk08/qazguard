@@ -49,3 +49,17 @@ Neon CLI setup is complete: `.env.local` is loaded privately by `cloud.py` and
 excluded from Git. Read-only CLI inspection succeeded; eight isolated tests
 passed. Public site: https://qazguard.onrender.com. The owner created the first administrator. Hosting is Render Free in Frankfurt. Configure both
 DATABASE_URL and DATABASE_URL_UNPOOLED privately in Render.
+
+## Gateway demonstration for project defence
+
+Administrators can enable the visible gateway demo in the AI assistant. The next
+request includes an opt-in server trace: ML decision, original business context,
+actual prepared/sent payload, token mapping, raw model response and restoration.
+Normal responses omit raw payload/response and never include the trace. Managers
+and analysts cannot request it. Cache keys include trace mode; cached responses
+are labelled and do not claim a new provider call. Trace is not written to audit
+logs or CSV, but can remain in the per-user memory cache for up to 60 seconds.
+Use synthetic data. This demonstrates the application pipeline, not an independent
+Google-side audit or a guarantee that all sensitive formats are detected. Ten
+isolated Flask tests passed, including trace opt-in, permission checks, actual
+replacement/restoration with a stub and block-without-provider-call.
