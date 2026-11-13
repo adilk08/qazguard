@@ -1,65 +1,183 @@
-# QazGuard Business — Render cloud edition
+# QazGuard AI — корпоративтік сұраныстарды қорғау шлюзі
 
-Cloud copy of the local educational pilot. Synthetic records only. The local
-SQLite database, account hashes, screenshots, logs and API keys are not included.
+ICT1103 пәніне арналған оқу жобасы. Қызметкердің сыртқы ЖИ-ге жіберетін сұранысын тексеру, қолдау көрсетілетін жеке деректерді токендермен алмастыру және шабуыл ретінде жіктелген сұранысты бұғаттау.
 
-## Render
+**Сайт:** https://qazguard.onrender.com
 
-Free Web Service; build `pip install -r requirements.txt`; start:
+## Мақсат және пайдаланушы
 
-`gunicorn cloud:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 180 --access-logfile /dev/null`
+Қызметкер хат немесе есеп дайындағанда ЖСН, БСН, IBAN және байланыс деректерін сыртқы ЖИ-ге байқаусыз жіберуі мүмкін. QazGuard осы тәуекелді азайтуға арналған. QazLogistics оқу бизнес-мысалы клиенттерді, тапсырыстарды, төлемдерді, есептерді және ЖИ көмекшісін біріктіреді. Әкімші, менеджер және аналитик рөлдерінің қолжетімділігі әртүрлі.
 
-One worker is required for in-memory sessions, per-user rate limiting and the
-provider queue. Sessions expire after eight hours and are reset on restart.
-Free Render sleeps during inactivity. Use persistent external PostgreSQL (Neon).
-Never substitute ephemeral SQLite in a public deployment.
+Бұл — тәуелсіз қауіпсіздік аудитінен өтпеген оқу прототипі.
 
-Environment variables (configure only in Render settings):
+## Қолданылған тәсіл
 
-- `DATABASE_URL`: Neon PostgreSQL URL with TLS (`sslmode=require`).
-- `SETUP_CODE`: long random owner-only initial setup code. Required only while
-  no users exist; prevents a public visitor from claiming the administrator.
-- `GEMINI_API_KEY`, `GEMINI_MODEL`: server-side Gemini credentials/model.
-- `QAZGUARD_PROVIDER`: `gemini` or `offline`.
-- `PUBLIC_ORIGIN`: HTTPS site origin, optional on Render where
-  `RENDER_EXTERNAL_URL` supplies it automatically. No trailing slash.
+```text
+Браузер → Python сервері → қорғаныс шлюзі → Gemini
+              ↕                  │           │
+        Neon PostgreSQL       бұғаттау       ↓
+Браузер ← нәтиже ← токендерді қалпына келтіру
+```
 
-The first administrator enters the setup code and chooses their own password.
-Public visitors see the login page; business records require login. There is no
-public self-registration after the first administrator exists. Render account
-access and repository access must stay limited to the owner.
+1. Сервер пайдаланушы сеансын, рөлін тексереді және қажет бизнес жазбаларды алады.
+2. **ML:** мәтінді нормалау → униграмма/биграмма TF-IDF → NumPy арқылы Multinomial Naive Bayes. Санаттар: SAFE, SENSITIVE_PII, JAILBREAK. Салыстыру тәсілі — KeywordRuleBaseline.
+3. **DLP:** ЖСН/БСН үшін 11-модуль, IBAN үшін mod 97, карта үшін Luhn; телефон/email үшін пішім үлгілері. Контексте ЖСН/БСН деп белгіленген 12 цифрлы мән жарамсыз болса да бүркемеленеді.
+4. **Токендеу:** secrets арқылы кездейсоқ метка жасалады; бастапқы мәнмен сәйкестік сервер жадындағы vault-та сақталады. Бұл шифрлау емес. QazGuard меткасы API шығынын өлшейтін ЖИ токенінен бөлек ұғым.
+5. Бұғатталмаған өңделген мәтін Gemini-ге жіберіледі. Жауаптағы белгілі токендер бастапқы мәндерге қайтарылады. Модель ойлап тапқан немесе өзгерткен токендер қабылданбайды.
 
-The seed creates 12 synthetic clients, 24 orders and 16 payments once. Existing
-local records are not automatically migrated. The backup link exports business
-records as JSON, excluding authentication data; automatic restore is not built.
-Ollama runs on a laptop and is not available from Render's localhost.
+Шлюз — сервер бағдарламасының бөлігі, жеке компьютер емес. API кілті серверде қолданылады. Есеп сандары мен диаграммалар кодпен және дерекқордан есептеледі; ЖИ мәтіндік түсіндірме береді.
 
-SQL reports are computed by code; AI prose can be wrong. Names and companies in
-selected database context are tokenized, while free-text names/addresses may not
-be detected. This remains an educational pilot, not an audited DLP product.
+## Деректер, дереккөз және пайдалану шарты
 
-## Checks
+Дереккөз — core.py ішіндегі generate_synthetic_dataset() генераторы. Ол synthetic_prompts_kz.csv файлын жасайды; бөлек жүктеу қажет емес.
 
-`python -m unittest test_cloud`
+| Бөлік | Жазба саны | Шаблон саны |
+|---|---:|---:|
+| Оқыту, seed 42 | 108 | 54 |
+| Тестілеу, seed 42 | 42 | 21 |
+| Қосымша ерекше жағдайлар | 3 | негізгі бөлуге кірмейді |
+| Барлығы | 153 | негізгі жиында 75 |
 
-Tests use an isolated SQLite fixture only with `QAZGUARD_TESTING=1` and never
-call Gemini. Schema creation, inserts, payment/overpayment checks and report sums passed on an isolated Neon validation branch. Live Render-to-Neon reports and a Gemini letter with two protected client tokens passed.
+150 негізгі жазбада әр санатқа 50 мысал бар. Үш қосымша мысал негізгі оқыту/тест бөлігіне қосылмайды. Group split кезінде оқыту мен тест шаблондары қиылыспайды, TF-IDF тек оқыту бөлігіне үйретіледі. 153 жазба — автоматты код тесттерінің саны емес.
 
-Neon CLI setup is complete: `.env.local` is loaded privately by `cloud.py` and
-excluded from Git. Read-only CLI inspection succeeded; eight isolated tests
-passed. Public site: https://qazguard.onrender.com. The owner created the first administrator. Hosting is Render Free in Frankfurt. Configure both
-DATABASE_URL and DATABASE_URL_UNPOOLED privately in Render.
+Генераторды және ML бағалауын бөлек іске қосу:
 
-## Gateway demonstration for project defence
+```console
+python core.py
+```
 
-Administrators can enable the visible gateway demo in the AI assistant. The next
-request includes an opt-in server trace: ML decision, original business context,
-actual prepared/sent payload, token mapping, raw model response and restoration.
-Normal responses omit raw payload/response and never include the trace. Managers
-and analysts cannot request it. Cache keys include trace mode; cached responses
-are labelled and do not claim a new provider call. Trace is not written to audit
-logs or CSV, but can remain in the per-user memory cache for up to 60 seconds.
-Use synthetic data. This demonstrates the application pipeline, not an independent
-Google-side audit or a guarantee that all sensitive formats are detected. Ten
-isolated Flask tests passed, including trace opt-in, permission checks, actual
-replacement/restoration with a stub and block-without-provider-call.
+Команда синтетикалық CSV файлын қайта жасайды; қолмен өзгерткен файл болса, көшірмесін сақтаңыз.
+
+Бизнес базасының бастапқы толтыруы: **12 жасанды клиент, 24 тапсырыс, 16 төлем**. Жазбалар өзгергенде ағымдағы көлем өзгереді. Бұлтта Neon PostgreSQL, жергілікті нұсқада SQLite қолданылады. Ноутбуктегі жазбалар бұлтқа автоматты көшірілмейді.
+
+Нақты клиент құжаттары алынған жоқ. Кездейсоқ нөмірдің нақты нөмірмен сәйкес келуі мүмкін. Деректер оқу, тестілеу және демонстрация үшін жасалған; оларды нақты адамдардың дерегі ретінде қолдануға болмайды. Генераторға немесе бастапқы кодқа CC0 не басқа ашық лицензия берілгені расталмаған, сондықтан ондай лицензия мәлімделмейді. Қайта тарату шарты құқық иесінің рұқсатымен анықталады.
+
+## Тәуелділіктер және файлдар
+
+Ұсынылатын орта — **Python 3.12**. Нұсқа аралықтары requirements.txt ішінде: NumPy, pandas, Flask, Gunicorn, pg8000, python-dotenv. Интерфейс HTML/CSS/JavaScript арқылы жасалған. Node.js тек интерфейс тексеруін орындауға қажет.
+
+| Файл | Міндеті |
+|---|---|
+| core.py | Генератор, DLP, токендеу, ML, бағалау |
+| business.py | Бизнес ережелері, рөлдер, есептер, ЖИ контексті |
+| cloud.py | Flask бұлттық сервері, қолжетімділік |
+| postgres_store.py | PostgreSQL сақтау қабаты |
+| server.py | Жергілікті сервер, шлюзді дайындау |
+| gemini_provider.py | Gemini серверлік адаптері |
+| business.html, business.js, business.css | Бизнес интерфейсі |
+| gateway.js, output.js | Көрсету режимі, нәтижені бейнелеу |
+| test_cloud.py, test_gateway.cjs | Сервер және интерфейс тексерулері |
+| render.yaml | Render баптауы |
+
+## Іске қосу қадамдары
+
+### Дайын сайт
+
+1. https://qazguard.onrender.com ашыңыз. Ұзақ үзілістен кейін алғашқы ашылу баяу болуы мүмкін.
+2. Әкімші берген тіркелгімен кіріңіз. Бизнес деректері кірусіз ашылмайды.
+3. Клиенттер, тапсырыстар, төлемдер немесе ЖИ көмекшісі бөлімін таңдаңыз. Тапсырысқа хат дайындауда қажетті тапсырысты таңдаңыз.
+4. Алғашқы әкімші жасалғаннан кейін жалпы өзіндік тіркелу жабылады; басқа пайдаланушыларды әкімші қосады. Оқытушыға кіру деректері бөлек беріледі, README-ге пароль жазылмайды.
+
+### Жергілікті оқу нұсқасы: Windows
+
+Репозиторийді жүктеп, оның түбірінде PowerShell ашыңыз:
+
+```powershell
+py -3.12 -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe server.py --port 8765
+```
+
+Браузерде http://127.0.0.1:8765 ашылады. Сервер терезесін ашық қалдырыңыз; тоқтату — Ctrl+C. Порт бос болмаса, --port 8766 таңдаңыз. SQLite файлы жергілікті жасалады. API бапталмаса, сыртқы ЖИ орнына демонстрациялық/офлайн жауап қолданылады. Gunicorn Windows-та осы жергілікті іске қосу үшін қолданылмайды.
+
+Нақты Gemini үшін server.py басталар алдында орта айнымалыларын жеке баптаңыз: QAZGUARD_PROVIDER=gemini, GEMINI_API_KEY, GEMINI_MODEL. server.py .env.local файлын өзі жүктемейді; автоматты жүктеу cloud.py нұсқасында бар. Құпия мәндерді кодқа немесе GitHub-қа қоспаңыз.
+
+### Render + Neon
+
+1. Репозиторийді Render Web Service-ке қосып, тұрақты Neon PostgreSQL базасын дайындаңыз.
+2. Құрастыру командасы: pip install -r requirements.txt.
+3. Бастау командасы:
+
+```sh
+gunicorn cloud:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 180 --access-logfile /dev/null
+```
+
+4. Render-дің жабық орта айнымалыларын баптаңыз:
+
+| Айнымалы | Мақсаты |
+|---|---|
+| DATABASE_URL | Neon PostgreSQL қосылымы, TLS: sslmode=require |
+| DATABASE_URL_UNPOOLED | Қажет баптау құралдарына арналған тікелей қосылым |
+| SETUP_CODE | Алғашқы әкімшіге арналған ұзын кездейсоқ құпия код |
+| QAZGUARD_PROVIDER | gemini немесе offline |
+| GEMINI_API_KEY | Gemini кілті, тек серверде |
+| GEMINI_MODEL | Тіркелгіге қолжетімді модель идентификаторы |
+| PUBLIC_ORIGIN | HTTPS сайт мекенжайы, соңында / жоқ; Render-де RENDER_EXTERNAL_URL арқылы автоматты алынуы мүмкін |
+
+5. Жаңа бос базада алғашқы әкімші жеке логин, кемінде 10 таңбалы пароль және SETUP_CODE енгізеді. Қолданыстағы база үшін бұл қадам қайталанбайды.
+
+Бір Gunicorn worker қажет: сеанстар, кезек және кейбір лимиттер жадта сақталады. Қайта іске қосу сеанстарды өшіреді, Neon жазбаларын жоймайды. Сеанс мерзімі — сегіз сағат. Бұлтта уақытша SQLite тұрақты сақтау ретінде қолданылмайды. Ноутбуктегі Ollama Render серверінің localhost мекенжайы арқылы қолжетімді емес.
+
+## Тесттер және нәтижелер
+
+Тәуелділіктер орнатылған ортада, репозиторий түбірінде:
+
+```console
+python -m unittest test_cloud
+node test_gateway.cjs
+```
+
+**13.11.2026 қайта тексерілді:** 10 Flask серверлік тесті және интерфейстің құпиялылық/экрандау бойынша 4 тексеруі өтті. Бұлар әр кірген сайын іске қосылмайды; әзірлеуші бөлек жүргізеді. Сервер тесттері уақытша SQLite базасын қолданады, .env.local жүктемейді және нақты Gemini API-ін шақырмайды.
+
+Тексерулер: кіруді талап ету, рөлдер, есеп сомалары, сақтық көшірмеден пароль деректерін алып тастау, көрсету режимі, токенді қалпына келтіру, провайдерді шақырмай бұғаттау және қауіпті HTML-ді экрандау.
+
+### Базалық v2 моделінің тарихи нәтижелері
+
+Бұл сандар бастапқы синтетикалық v2 бағалауына қатысты; жария сайттың барлық сұраныстағы қауіпсіздік кепілдігі емес.
+
+| Көрсеткіш | Нәтиже |
+|---|---:|
+| Seed 42: Accuracy, 42 тест жазбасы | 0,8810 |
+| Seed 42: Macro-F1 | 0,8766 |
+| Seed 42: кілт сөздер Accuracy | 0,8571 |
+| 20 топтық бөлудің орташа Accuracy, ML | 0,906 |
+| 20 топтық бөлудің орташа Accuracy, кілт сөздер | 0,805 |
+| Базалық DLP, 150 жазба: TP / FP / FN | 126 / 0 / 0 |
+| Кездейсоқ код сынағы: қате токендеу | 36 / 1000 (3,6%) |
+
+Seed 42 қателер матрицасы: жол — нақты санат, баған — болжам.
+
+| Нақты / Болжам | SAFE | SENSITIVE_PII | JAILBREAK |
+|---|---:|---:|---:|
+| SAFE | 10 | 2 | 2 |
+| SENSITIVE_PII | 0 | 14 | 0 |
+| JAILBREAK | 1 | 0 | 13 |
+
+DLP мәндері табылған деректердің түрі мен саны бойынша есептелген. Жаңартылған бизнес токендеу саясатына осы сандар автоматты қолданылмайды. Render → Neon есептері және нақты Gemini мысалы бұрын бөлек тексерілген; автоматты тесттер бұл сыртқы қызметтердің үнемі жұмыс істейтінін дәлелдемейді.
+
+## Қорғауда шлюзді көрсету
+
+Әкімші ЖИ көмекшісінде көрсету режимін қосып, жасанды дерекпен сұраныс жібереді. Қалыпты режимде өңдеу ізі берілмейді; менеджер мен аналитик оны сұрата алмайды.
+
+Кезеңдер: бастапқы контекст → дайындалған/жіберілген мәтін → токен сәйкестігі → модельдің өңделмеген жауабы → қалпына келтірілген нәтиже. Жасанды ЖСН мен email екі меткамен ауыстырылса, екі токен жасалады. Қалпына келтіру саны модель қайтарған белгілі токендерге байланысты.
+
+Үш мысал: қауіпсіз сұраныс; ЖСН/email токендеу; бұғатталатын jailbreak. Кэштегі жауап белгіленеді, жаңа Gemini шақыруы ретінде көрсетілмейді. Өңдеу ізі журналға/CSV-ге жазылмайды, бірақ пайдаланушы жад кэшінде 60 секундқа дейін қалуы мүмкін. Бұл — қолданбаның өз серверлік ізі, Google жағындағы тәуелсіз аудит емес.
+
+## Шектеулер
+
+- Еркін мәтіндегі барлық аты-жөн мен мекенжай анықталмайды. Белгілі бизнес өрістерін токендеу әмбебап NER жүйесін алмастырмайды.
+- Бақылау сомасы құрылымды тексереді; иесін немесе шоттың бар екенін растамайды. Кездейсоқ коллизия болуы мүмкін.
+- ML академиялық сұрақты қате бұғаттауы немесе жаңа шабуылды өткізуі мүмкін. Нақты деректердегі сапа және әр тіл бойынша сапа бөлек өлшенбеген.
+- Интерфейстің толық қазақша/ағылшынша аудармасы аяқталмаған. ЖИ мәтіні қате болуы мүмкін; маңызды қорытындыны адам тексереді.
+- Gemini квотасы, желі немесе модель қолжетімділігі жауапқа әсер етеді. Офлайн нәтиже нақты Gemini жауабы ретінде көрсетілмейді.
+- Анықталмаған деректер сыртқы ЖИ-ге кетуі мүмкін. Қорғауда тек синтетикалық дерек қолданылады.
+- JSON сақтық көшірмесі бизнес жазбаларды шығарады, аутентификация деректерін қоспайды; автоматты кері қалпына келтіру жоқ.
+- Бір оқу жұмыс кеңістігіне арналған; өндірістік көп ұйымды жүйе мен жоғары жүктеме кепілдігі жоқ.
+
+## ЖИ қолдану және тапсыру материалдары
+
+Codex кодты, интерфейсті, құжаттаманы және презентацияны дайындауға/түзетуге көмектесті. Gemini қолданбадағы сыртқы ЖИ жауаптарын береді; NumPy Naive Bayes жіктеуі одан бөлек жұмыс істейді. Студенттер кодты түсіндіріп, нәтижелер мен шектеулерді өздері негіздеуі керек.
+
+README-ден бөлек бастапқы код, дерек немесе алу жолы, ұсынылатын 2–4 беттік қысқа есеп, 5–7 мазмұнды слайд, жеке үлес кестесі және ЖИ декларациясы тапсырылады. Бұл README бөлек құжаттарды алмастырмайды. Соңғы нұсқаларын команда тапсыру жинағына қосады.
+
+**Презентация:** https://www.canva.com/d/Aia5W4HJ3cAkjiZ
