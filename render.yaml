@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: qazguard
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn cloud:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 180 --access-logfile /dev/null
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.10
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_URL_UNPOOLED
+        sync: false
+      - key: SETUP_CODE
+        generateValue: true
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.1-flash-lite
+      - key: QAZGUARD_PROVIDER
+        value: gemini
