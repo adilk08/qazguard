@@ -48,6 +48,7 @@ def protected(admin=False):
 
 @app.before_request
 def origin_check():
+    if request.path=='/healthz' and request.method=='GET':return None
     if not TESTING and not request.is_secure:return jsonify(message='Используйте HTTPS.'),403
     if request.method=='POST':
         if request.headers.get('Origin')!=ORIGIN:return jsonify(message='Неверный источник запроса.'),403

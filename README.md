@@ -43,9 +43,9 @@ be detected. This remains an educational pilot, not an audited DLP product.
 `python -m unittest test_cloud`
 
 Tests use an isolated SQLite fixture only with `QAZGUARD_TESTING=1` and never
-call Gemini. The live Neon integration must be checked before publication.
+call Gemini. Schema creation, inserts, payment/overpayment checks and report sums passed on an isolated Neon validation branch. Render-to-Neon integration still needs a live deployment check.
 
 Neon CLI setup is complete: `.env.local` is loaded privately by `cloud.py` and
 excluded from Git. Read-only CLI inspection succeeded; eight isolated tests
-passed. See NEON_SETUP.md for remaining deployment checks. Configure both
+passed. Source upload is complete; publishing and initial owner setup are still pending. Configure both
 DATABASE_URL and DATABASE_URL_UNPOOLED privately in Render.
