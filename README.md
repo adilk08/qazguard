@@ -43,9 +43,9 @@ be detected. This remains an educational pilot, not an audited DLP product.
 `python -m unittest test_cloud`
 
 Tests use an isolated SQLite fixture only with `QAZGUARD_TESTING=1` and never
-call Gemini. Schema creation, inserts, payment/overpayment checks and report sums passed on an isolated Neon validation branch. Render-to-Neon integration still needs a live deployment check.
+call Gemini. Schema creation, inserts, payment/overpayment checks and report sums passed on an isolated Neon validation branch. Live Render-to-Neon reports and a Gemini letter with two protected client tokens passed.
 
 Neon CLI setup is complete: `.env.local` is loaded privately by `cloud.py` and
 excluded from Git. Read-only CLI inspection succeeded; eight isolated tests
-passed. Source upload is complete; publishing and initial owner setup are still pending. Configure both
+passed. Public site: https://qazguard.onrender.com. The owner created the first administrator. Hosting is Render Free in Frankfurt. Configure both
 DATABASE_URL and DATABASE_URL_UNPOOLED privately in Render.

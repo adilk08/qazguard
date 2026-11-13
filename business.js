@@ -38,9 +38,12 @@ api('/api/session').then(async s=>{if(s.user)await load();else{$('login').hidden
 
 
 async function localReport(){
+ if($('localReport').disabled)return;
+ $('localReport').disabled=true;$('localReport').textContent='Строим отчёт…';
  draft={prompt:$('prompt').value,mode:$('mode').value,order:$('orderPick')?.value||'0'};
  try {const data=await api('/api/report',{mode:draft.mode,order_id:+draft.order});
  if(!data){notice('Для свободного запроса нет выборки базы. Выберите бизнес-задачу.');return;}
- result={provider:'SQLite · без ИИ',action:'LOCAL_REPORT',entities:0,answer:'Данные рассчитаны локально. Запрос к языковой модели не выполнялся.',report:data,payload:null,raw:null};render();
+ result={provider:'PostgreSQL · без ИИ',action:'LOCAL_REPORT',entities:0,answer:'Данные рассчитаны по базе на сервере. Запрос к языковой модели не выполнялся.',report:data,payload:null,raw:null};render();
  }catch(e){notice(e.message);}
+ finally{if($('localReport')){$('localReport').disabled=false;$('localReport').textContent='Данные без ИИ';}}
 }
